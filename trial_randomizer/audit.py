@@ -49,6 +49,8 @@ def append_rows(path, rows):
 def read_rows(path):
     """Read an audit log CSV back into a list of dicts, decoding the JSON
     fields."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Audit log not found: {path}")
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     for row in rows:

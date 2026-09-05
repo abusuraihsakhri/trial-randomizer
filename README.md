@@ -1,126 +1,217 @@
 # Trial Randomizer
 
-> **Domain:** Clinical Decision Support & Biomedical Computing  
-> **Reference Guidelines & Standards:** `Standard Clinical Formulations & ISO/IEC Quality Frameworks`
+> **Domain:** Clinical Decision Support & Biomedical Computing
 
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)
-![Audit Trail](https://img.shields.io/badge/Audit-HMAC--SHA256_Tamper--Evident-brightgreen.svg)
-![Zero-PHI Guard](https://img.shields.io/badge/Guard-Zero--PHI_Outbound-blue.svg)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
 
 </div>
 
 ---
 
-## 📖 What It Does
+## Overview
 
-Audit log storage and the balance-check report.
+Trial Randomizer is a clinical trial treatment allocation library implementing three randomization methods:
 
-Every allocation decision made by any of the three methods is appended as
-one row to a CSV file, so the full history of who got what, when, and why
-can be reconstructed later for a trial's audit trail. Complex fields
-(stratum covariates, per-arm imbalance scores) are stored as JSON text
-inside their cell.
+1. **Permuted Block Randomization** — Standard method with configurable block sizes for allocation concealment
+2. **Pocock-Simon Minimization** — Covariate-adaptive randomization balancing multiple prognostic factors
+3. **Stratified Block Randomization** — Independent block sequences per stratum
 
-Permuted block randomization.
-
-Standard method: subjects are allocated in blocks. Each block contains a
-fixed multiple of the allocation ratio (e.g. ratio 1:1 with block size 4
-gives 2 of each arm), the block's contents are shuffled, and subjects
-receive arms one at a time off the shuffled block. When a block is
-exhausted a new one is started. Supplying more than one block size makes
-the block length itself unpredictable, which is standard practice for
-concealment (a fixed block size lets the last 1-2 allocations in a block
-be guessed).
+All methods produce a tamper-evident, HMAC-SHA256 signed audit trail for regulatory compliance.
 
 ---
 
-## ⚙️ Key Capabilities & Algorithmic Modules
-
-### 🔬 Core Algorithmic & Evaluation Engines
-
-- **`BlockRandomizer`** — dedicated module for block randomizer evaluation and state verification.
-- **`MinimizationRandomizer`** — dedicated module for minimization randomizer evaluation and state verification.
-- **`StratifiedBlockRandomizer`** — dedicated module for stratified block randomizer evaluation and state verification.
-
----
-
-## 📐 Mathematical Formulation & Logic
-
-```text
-  """Return (arm, block_id, block_size) for the next subject."""
-  min_score = min(scores.values())
-  return (version, tuple(internal), gauss_next)
-```
-
----
-
-## 💻 CLI Quickstart & Usage
-
-### 1. Guided Interactive Mode
-```bash
-python cli.py
-```
-
-### 2. Direct Parameterized Evaluation
-```bash
-python cli.py --task-id <value> --target <value> --primary <value> --secondary <value>
-```
-
-### Parameter Reference
-- `--task-id`: Specifies input measurement or parameter value.
-- `--target`: Specifies input measurement or parameter value.
-- `--primary`: Specifies input measurement or parameter value.
-- `--secondary`: Specifies input measurement or parameter value.
-- `--critical`: Specifies input measurement or parameter value.
-- `--status`: Specifies input measurement or parameter value.
-- `--input`: Specifies input measurement or parameter value.
-- `--output`: Specifies input measurement or parameter value.
-
-### Input Data Schema
-
-| Field | Description | Requirement |
-|:------|:------------|:------------|
-| `suite_name` | Parameter / observation metric | Required |
-| `system_slug` | Parameter / observation metric | Required |
-| `standard_reference` | Parameter / observation metric | Required |
-| `test_cases` | Parameter / observation metric | Required |
-
----
-
-## 🛡️ Security & Enterprise Architecture
-
-* **Zero-PHI Outbound Interceptor:** Active AST and regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers.
-* **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation and state transition.
-* **Air-Gapped LLM Reasoning Adapter:** Agnostic integration for local Ollama instances (`llama3`, `mistral`), Claude 3.5 Sonnet, GPT-4o, and deterministic test mocks.
-* **Active Learning Bayesian Calibration:** Dynamic tracker updating worker reliability weights and monitoring Brier calibration drift.
-* **FastAPI & Prometheus Telemetry:** Exposes OpenAPI 3.1 REST endpoints and operational Prometheus metrics (`/metrics`).
-
----
-
-## 🧪 Testing & Verification
-
-Run the automated test suite:
+## Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/abusuraihsakhri/trial-randomizer.git
+cd trial-randomizer
+
+# Install dependencies
+pip install -e .
+
+# Or install with development dependencies
+pip install -e ".[dev]"
+```
+
+### Requirements
+
+- Python 3.10+
+- fastapi >= 0.111.0
+- uvicorn >= 0.29.0
+- pydantic >= 2.0.0
+
+---
+
+## Usage
+
+### Python API
+
+```python
+from trial_randomizer.block import BlockRandomizer, generate_block_schedule
+from trial_randomizer.minimization import MinimizationRandomizer
+from trial_randomizer.stratified import StratifiedBlockRandomizer
+
+# Permuted block randomization
+schedule = generate_block_schedule(
+    treatments=["Arm A", "Arm B"],
+    block_sizes=[4, 6],
+    total_subjects=100,
+    seed=42
+)
+
+# Using the BlockRandomizer directly
+br = BlockRandomizer(arms=["A", "B"], block_sizes=[4, 6])
+arm, block_id, block_size = br.next()
+
+# Pocock-Simon minimization
+mr = MinimizationRandomizer(arms=["A", "B"], p_biased_coin=0.8)
+arm, reason, scores = mr.assign({"site": "Site1", "age_group": "over65"})
+
+# Stratified block randomization
+sbr = StratifiedBlockRandomizer(arms=["A", "B"], block_sizes=[4])
+arm, block_id, block_size, stratum = sbr.assign({"site": "Site1"})
+```
+
+### Command Line Interface
+
+```bash
+# Permuted block randomization
+python -m trial_randomizer.cli block \
+    --state trial_state.json \
+    --audit audit_log.csv \
+    --arms A B \
+    --ratio 1 1 \
+    --block-sizes 4 6 \
+    --n 10
+
+# Pocock-Simon minimization
+python -m trial_randomizer.cli minimize \
+    --state trial_state.json \
+    --audit audit_log.csv \
+    --arms A B \
+    --factor site=Site1 age_group=over65
+
+# Stratified block randomization
+python -m trial_randomizer.cli stratified \
+    --state trial_state.json \
+    --audit audit_log.csv \
+    --arms A B \
+    --stratum site=Site1
+
+# Generate concealment envelopes
+python -m trial_randomizer.cli envelopes \
+    --arms A B \
+    --n 100 \
+    --labels-out envelopes.txt \
+    --master-out master_key.csv
+
+# Balance-check report
+python -m trial_randomizer.cli balance-report \
+    --audit audit_log.csv
+```
+
+### FastAPI REST Server
+
+```bash
+# Start the server
+python cli.py serve --host 127.0.0.1 --port 8000
+
+# Or using uvicorn directly
+uvicorn agents.api:app --host 127.0.0.1 --port 8000
+```
+
+API Endpoints:
+- `GET /health` — Health check
+- `GET /metrics` — Prometheus-style metrics
+- `POST /api/audit` — Submit a task for evaluation
+- `POST /api/chat` — Query the supervisory chat
+- `GET /api/audit/logs` — Retrieve audit trail
+
+---
+
+## Security Features
+
+### Zero-PHI Outbound Guard
+Active regex inspection blocking SSNs, MRNs, phone numbers, emails, and patient identifiers from outbound data.
+
+### Tamper-Evident Audit Trail
+Chained, HMAC-SHA256 signed logs for every allocation decision and state transition. Integrity verification includes both hash chain linkage and signature validation.
+
+**Important:** Set the `AUDIT_SECRET_KEY` environment variable in production. Without it, a random key is generated (with a warning), which is not suitable for production use.
+
+```bash
+# Production deployment
+export AUDIT_SECRET_KEY="your-secure-random-key"
+```
+
+### Path Traversal Protection
+All file path inputs are validated to prevent directory traversal attacks.
+
+---
+
+## Testing
+
+```bash
+# Run all tests
 pytest -v
-```
 
-Execute high-throughput batch simulation benchmarks:
+# Run with coverage
+pytest --cov=trial_randomizer --cov=agents
 
-```bash
-python simulator.py --tasks 1000 --concurrency 8
+# Run specific test files
+pytest tests/test_randomizer_core.py -v
+pytest tests/test_security.py -v
 ```
 
 ---
 
-## 🐳 Container Deployment
+## Docker Deployment
 
 ```bash
+# Build and run with Docker Compose
+AUDIT_SECRET_KEY="your-secure-key" docker-compose up --build
+
+# Or build and run manually
 docker build -t trial-randomizer .
-docker run -p 8000:8000 trial-randomizer
+docker run -p 8000:8000 -e AUDIT_SECRET_KEY="your-secure-key" trial-randomizer
 ```
+
+---
+
+## Project Structure
+
+```
+trial-randomizer/
+├── trial_randomizer/      # Core randomization library
+│   ├── block.py           # Permuted block randomization
+│   ├── minimization.py    # Pocock-Simon minimization
+│   ├── stratified.py      # Stratified block randomization
+│   ├── audit.py           # Audit log storage and reporting
+│   ├── state.py           # JSON state persistence
+│   └── cli.py             # Command-line interface
+├── agents/                # Enterprise analytical suite
+│   ├── api.py             # FastAPI REST server
+│   ├── base.py            # Security, PHI guard, audit trail
+│   ├── models.py          # Pydantic data models
+│   ├── supervisor.py      # Multi-agent orchestrator
+│   ├── workers.py         # Specialized evaluation workers
+│   └── ...
+├── tests/                 # Test suite
+├── cli.py                 # Main CLI entry point
+├── simulator.py           # High-throughput simulation
+├── enrichment.py          # Additional analytical engines
+├── pyproject.toml         # Project configuration
+├── Dockerfile             # Container build
+└── docker-compose.yml     # Container orchestration
+```
+
+---
+
+## License
+
+MIT License

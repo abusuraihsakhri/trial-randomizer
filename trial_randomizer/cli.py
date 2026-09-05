@@ -296,7 +296,8 @@ def cmd_envelopes(args):
     envelope_no = 0
 
     if args.strata_file:
-        with open(args.strata_file, newline="", encoding="utf-8") as f:
+        strata_path = _validate_path(args.strata_file)
+        with open(strata_path, newline="", encoding="utf-8") as f:
             strata_rows = list(csv_mod.DictReader(f))
         if not strata_rows:
             raise SystemExit("error: --strata-file has no data rows")
@@ -347,9 +348,11 @@ def cmd_envelopes(args):
             })
             labels.append(f"Envelope {envelope_no:04d}")
 
-    with open(args.labels_out, "w", encoding="utf-8") as f:
+    labels_out_path = _validate_path(args.labels_out)
+    master_out_path = _validate_path(args.master_out)
+    with open(labels_out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(labels) + "\n")
-    audit.append_rows(args.master_out, rows)
+    audit.append_rows(master_out_path, rows)
 
     print(f"Generated {envelope_no} envelopes (seed={seed}).")
     print(f"  Blinded envelope labels (safe to print/seal) -> {args.labels_out}")
@@ -363,11 +366,12 @@ def cmd_envelopes(args):
 def cmd_balance_report(args):
     rows = []
     for path in args.audit:
-        rows.extend(audit.read_rows(path))
+        rows.extend(audit.read_rows(_validate_path(path)))
     text = audit.format_balance_report(rows)
     print(text)
     if args.output:
-        with open(args.output, "w", encoding="utf-8") as f:
+        output_path = _validate_path(args.output)
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(text + "\n")
 
 
@@ -445,6 +449,14 @@ def build_parser():
     sp.set_defaults(func=cmd_balance_report)
 
     return p
+
+
+def _validate_path(path):
+    """Validate that a path does not contain directory traversal attempts."""
+    normalized = os.path.normpath(path)
+    if ".." in normalized.split(os.sep):
+        raise ValueError(f"Path contains directory traversal: {path}")
+    return normalized
 
 
 def main(argv=None):

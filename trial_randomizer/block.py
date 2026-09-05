@@ -58,7 +58,9 @@ class BlockRandomizer:
         """Return (arm, block_id, block_size) for the next subject."""
         if not self._queue:
             self._new_block()
-        arm = self._queue.pop(0)
+        # pop() from the end is O(1) vs pop(0) which is O(n).
+        # Since the block is already shuffled, popping from the end is equivalent.
+        arm = self._queue.pop()
         return arm, self._block_id, self._block_size_current
 
 
