@@ -1,14 +1,13 @@
-version: '3.8'
-
 services:
   trial-randomizer:
     build: .
     container_name: trial-randomizer
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
-      - AUDIT_SECRET_KEY=${AUDIT_SECRET_KEY:-change-me-in-production}
-      - MODEL_PROVIDER=mock
+      AUDIT_SECRET_KEY: ${AUDIT_SECRET_KEY:?Set AUDIT_SECRET_KEY before starting}
+      TRIAL_RANDOMIZER_API_KEY: ${TRIAL_RANDOMIZER_API_KEY:?Set TRIAL_RANDOMIZER_API_KEY before starting}
+      MODEL_PROVIDER: mock
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

@@ -11,24 +11,27 @@ be guessed).
 """
 
 import random
+from numbers import Integral
 
 
 class BlockRandomizer:
     def __init__(self, arms, ratio=None, block_sizes=(4,), rng=None):
         if len(arms) < 2:
             raise ValueError("need at least two arms")
+        if len(set(arms)) != len(arms):
+            raise ValueError("arm names must be unique")
         if ratio is None:
             ratio = [1] * len(arms)
         if len(ratio) != len(arms):
             raise ValueError("ratio must have exactly one entry per arm")
-        if any(r <= 0 for r in ratio):
+        if any(not isinstance(r, Integral) or isinstance(r, bool) or r <= 0 for r in ratio):
             raise ValueError("ratio entries must be positive")
         if not block_sizes:
             raise ValueError("at least one block size is required")
 
         unit = sum(ratio)
         for bs in block_sizes:
-            if bs <= 0 or bs % unit != 0:
+            if not isinstance(bs, Integral) or isinstance(bs, bool) or bs <= 0 or bs % unit != 0:
                 raise ValueError(
                     f"block size {bs} must be a positive multiple of the "
                     f"allocation ratio unit ({unit} = sum of ratio)"
@@ -66,6 +69,8 @@ class BlockRandomizer:
 
 def generate_block_schedule(treatments, block_sizes=(4,), total_subjects=20, ratio=None, seed=None):
     """Generate a sequence of randomized allocations for a cohort of subjects."""
+    if not isinstance(total_subjects, Integral) or isinstance(total_subjects, bool) or total_subjects < 0:
+        raise ValueError("total_subjects must be a non-negative integer")
     rng = random.Random(seed) if seed is not None else random.Random()
     randomizer = BlockRandomizer(arms=treatments, ratio=ratio, block_sizes=block_sizes, rng=rng)
     schedule = []

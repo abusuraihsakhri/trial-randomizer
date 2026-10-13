@@ -16,7 +16,7 @@ supervisor = SystemSupervisor(model_provider="mock")
 def _validate_path(path):
     """Validate that a path does not contain directory traversal attempts."""
     normalized = os.path.normpath(path)
-    if ".." in normalized.split(os.sep):
+    if ".." in str(path).replace("\\", "/").split("/"):
         raise ValueError(f"Path contains directory traversal: {path}")
     return normalized
 

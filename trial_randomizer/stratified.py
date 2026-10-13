@@ -13,6 +13,7 @@ from .block import BlockRandomizer
 
 class StratifiedBlockRandomizer:
     def __init__(self, arms, ratio=None, block_sizes=(4,), rng=None):
+        BlockRandomizer(arms, ratio, block_sizes, rng)  # validate at construction
         self.arms = arms
         self.ratio = ratio
         self.block_sizes = block_sizes

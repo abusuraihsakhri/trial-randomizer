@@ -15,6 +15,7 @@ left off.
 """
 
 import argparse
+import os
 import random
 import sys
 from datetime import datetime
@@ -52,13 +53,18 @@ def parse_kv_floats(items):
 def _new_seed(explicit_seed):
     if explicit_seed is not None:
         return explicit_seed
-    return random.SystemRandom().randrange(1, 2**31 - 1)
+    return random.SystemRandom().getrandbits(128)
 
 
 def _rng_from_state(state):
     rng = random.Random()
     rng.setstate(rng_state_from_json(state["rng_state"]))
     return rng
+
+
+def _check_method(state, method):
+    if state.get("method") != method:
+        raise ValueError(f"State file belongs to {state.get('method')!r}, not {method!r}")
 
 
 def _now():
@@ -70,6 +76,8 @@ def _now():
 # --------------------------------------------------------------------------
 
 def cmd_block(args):
+    if args.n < 1:
+        raise SystemExit("error: --n must be a positive integer")
     state = load_state(args.state)
     if state is None:
         if not args.arms:
@@ -94,8 +102,9 @@ def cmd_block(args):
             "block_size_current": None,
             "seq": 0,
         }
-        print(f"[init] seed={seed} arms={args.arms} ratio={ratio} block_sizes={block_sizes}")
+        print(f"[init] arms={args.arms} ratio={ratio} block_sizes={block_sizes}")
     else:
+        _check_method(state, "block")
         rng = _rng_from_state(state)
 
     br = BlockRandomizer(state["arms"], state["ratio"], state["block_sizes"], rng)
@@ -119,7 +128,6 @@ def cmd_block(args):
             "arm": arm,
             "block_id": block_id,
             "block_size": block_size,
-            "seed": state["seed"],
         })
         print(f"seq {state['seq']}: subject={sid or '(unlabeled)'} -> arm {arm}")
 
@@ -163,10 +171,11 @@ def cmd_minimize(args):
             "seq": 0,
         }
         print(
-            f"[init] seed={seed} arms={args.arms} ratio={ratio} "
+            f"[init] arms={args.arms} ratio={ratio} "
             f"factor_weights={factor_weights} p={args.p}"
         )
     else:
+        _check_method(state, "minimize")
         rng = _rng_from_state(state)
 
     mr = MinimizationRandomizer(
@@ -194,7 +203,6 @@ def cmd_minimize(args):
         "stratum": covariates,
         "scores": scores,
         "reason": reason,
-        "seed": state["seed"],
     }
     state["counts"] = mr.counts
     state["totals"] = mr.totals
@@ -234,8 +242,9 @@ def cmd_stratified(args):
             "strata": {},
             "seq": 0,
         }
-        print(f"[init] seed={seed} arms={args.arms} ratio={ratio} block_sizes={block_sizes}")
+        print(f"[init] arms={args.arms} ratio={ratio} block_sizes={block_sizes}")
     else:
+        _check_method(state, "stratified")
         rng = _rng_from_state(state)
 
     sbr = StratifiedBlockRandomizer(state["arms"], state["ratio"], state["block_sizes"], rng)
@@ -259,7 +268,6 @@ def cmd_stratified(args):
         "stratum": covariates,
         "block_id": block_id,
         "block_size": block_size,
-        "seed": state["seed"],
     }
 
     state["strata"] = {}
@@ -322,7 +330,6 @@ def cmd_envelopes(args):
                     "stratum": covars,
                     "block_id": block_id,
                     "block_size": block_size,
-                    "seed": seed,
                 })
                 tag = "/".join(covars.values())
                 labels.append(f"Envelope {envelope_no:04d}  [{tag}]" if tag else f"Envelope {envelope_no:04d}")
@@ -344,7 +351,6 @@ def cmd_envelopes(args):
                 "arm": arm,
                 "block_id": block_id,
                 "block_size": block_size,
-                "seed": seed,
             })
             labels.append(f"Envelope {envelope_no:04d}")
 
@@ -354,7 +360,7 @@ def cmd_envelopes(args):
         f.write("\n".join(labels) + "\n")
     audit.append_rows(master_out_path, rows)
 
-    print(f"Generated {envelope_no} envelopes (seed={seed}).")
+    print(f"Generated {envelope_no} envelopes.")
     print(f"  Blinded envelope labels (safe to print/seal) -> {args.labels_out}")
     print(f"  Master allocation key (KEEP CONFIDENTIAL)     -> {args.master_out}")
 
@@ -454,7 +460,7 @@ def build_parser():
 def _validate_path(path):
     """Validate that a path does not contain directory traversal attempts."""
     normalized = os.path.normpath(path)
-    if ".." in normalized.split(os.sep):
+    if ".." in str(path).replace("\\", "/").split("/"):
         raise ValueError(f"Path contains directory traversal: {path}")
     return normalized
 

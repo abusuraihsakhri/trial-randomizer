@@ -2,8 +2,11 @@
 FastAPI REST API Server for Trial Randomizer.
 """
 import logging
+import os
+import secrets
 from typing import Dict, Any, List
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from .base import AuditLogger, PHIGuard, SecurityException
 from .models import SystemTaskPayload, ConsensusDossier
@@ -18,6 +21,22 @@ app = FastAPI(
     description="Enterprise Distributed Component Platform (Clinical & Biomedical AI)",
     version="3.0.0-ENTERPRISE",
 )
+
+
+@app.middleware("http")
+async def require_api_key(request: Request, call_next):
+    """Protect all operational endpoints; health and metrics remain public."""
+    if request.url.path.startswith("/api/"):
+        expected = os.environ.get("TRIAL_RANDOMIZER_API_KEY")
+        if not expected:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Operational API disabled: configure TRIAL_RANDOMIZER_API_KEY"},
+            )
+        supplied = request.headers.get("x-api-key", "")
+        if not secrets.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
+            return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
+    return await call_next(request)
 
 
 class ChatRequest(BaseModel):
