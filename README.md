@@ -1,217 +1,115 @@
 # Trial Randomizer
 
-> **Domain:** Clinical Decision Support & Biomedical Computing
+A Python package and command-line interface for experimental treatment allocation, with a browser-based demonstration of the same Python algorithms.
 
-<div align="center">
+**Use limitation:** This project is intended for algorithm exploration, simulation, and research prototyping. It is **not** a validated clinical trial enrollment system. In particular, it does not provide centralized allocation concealment, role-based authorization, durable signed allocation records, or the operational controls needed for regulated trials.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)
+## Features
 
-</div>
+- **Permuted block randomization:** configurable treatment arms, allocation ratios, and candidate block sizes.
+- **Stratified blocks:** independent permuted-block sequences for each observed combination of stratification factors.
+- **Pocock–Simon minimization:** marginal covariate balancing with configurable biased-coin probability and ratio-normalized imbalance scoring.
+- **Command-line allocation:** JSON state persistence and CSV records; numbered envelope preparation and balance summaries.
+- **Browser demonstration:** uses Pyodide to execute the actual Python allocation classes locally, with an exportable demonstration CSV.
+- **Separate FastAPI analytical service:** exposes mock worker evaluations and an in-memory HMAC audit trail; it is not the clinical randomization API.
 
----
+## Browser demonstration
 
-## Overview
+The static browser interface is in `web/`. GitHub Pages deployment is configured through `.github/workflows/pages.yml`. The site loads Pyodide from jsDelivr; internet access is needed to load the runtime. The demo does not send entered allocation parameters or results to an application backend, and it does not persist them between reloads. Ordinary web/CDN access logs may still be collected by hosting providers.
 
-Trial Randomizer is a clinical trial treatment allocation library implementing three randomization methods:
+To preview the browser site locally after installing Python:
 
-1. **Permuted Block Randomization** — Standard method with configurable block sizes for allocation concealment
-2. **Pocock-Simon Minimization** — Covariate-adaptive randomization balancing multiple prognostic factors
-3. **Stratified Block Randomization** — Independent block sequences per stratum
+```bash
+mkdir -p /tmp/trial-randomizer-site/trial_randomizer
+cp web/index.html web/app.js /tmp/trial-randomizer-site/
+cp trial_randomizer/{__init__,block,minimization,stratified}.py /tmp/trial-randomizer-site/trial_randomizer/
+python -m http.server 8001 --directory /tmp/trial-randomizer-site
+```
 
-All methods produce a tamper-evident, HMAC-SHA256 signed audit trail for regulatory compliance.
-
----
+Open `http://localhost:8001`. Do not enter real patient data or use demo allocations for live trial enrollment.
 
 ## Installation
 
+Requires Python 3.10 or newer.
+
 ```bash
-# Clone the repository
 git clone https://github.com/abusuraihsakhri/trial-randomizer.git
 cd trial-randomizer
-
-# Install dependencies
-pip install -e .
-
-# Or install with development dependencies
-pip install -e ".[dev]"
+python -m pip install -e ".[dev]"
+python -m pytest -q
 ```
 
-### Requirements
+The runtime dependencies are FastAPI, Uvicorn, and Pydantic. The randomization algorithms themselves use only the Python standard library. Pyodide provides those modules in the browser without running FastAPI or a server-side Python process.
 
-- Python 3.10+
-- fastapi >= 0.111.0
-- uvicorn >= 0.29.0
-- pydantic >= 2.0.0
-
----
-
-## Usage
-
-### Python API
+## Python API
 
 ```python
-from trial_randomizer.block import BlockRandomizer, generate_block_schedule
+from trial_randomizer.block import BlockRandomizer
 from trial_randomizer.minimization import MinimizationRandomizer
 from trial_randomizer.stratified import StratifiedBlockRandomizer
 
-# Permuted block randomization
-schedule = generate_block_schedule(
-    treatments=["Arm A", "Arm B"],
-    block_sizes=[4, 6],
-    total_subjects=100,
-    seed=42
+block = BlockRandomizer(["Control", "Treatment"], ratio=[1, 1], block_sizes=[4, 6])
+arm, block_id, block_size = block.next()
+
+minimum = MinimizationRandomizer(
+    ["Control", "Treatment"], ratio=[1, 1], p_biased_coin=0.8
 )
+arm, reason, scores = minimum.assign({"site": "North", "age": "over65"})
 
-# Using the BlockRandomizer directly
-br = BlockRandomizer(arms=["A", "B"], block_sizes=[4, 6])
-arm, block_id, block_size = br.next()
-
-# Pocock-Simon minimization
-mr = MinimizationRandomizer(arms=["A", "B"], p_biased_coin=0.8)
-arm, reason, scores = mr.assign({"site": "Site1", "age_group": "over65"})
-
-# Stratified block randomization
-sbr = StratifiedBlockRandomizer(arms=["A", "B"], block_sizes=[4])
-arm, block_id, block_size, stratum = sbr.assign({"site": "Site1"})
+stratified = StratifiedBlockRandomizer(["Control", "Treatment"], block_sizes=[4])
+arm, block_id, block_size, stratum_key = stratified.assign({"site": "North"})
 ```
 
-### Command Line Interface
+For unequal allocation ratios (for example 2:1), block sizes must be positive multiples of the sum of the ratio entries. Minimization scores are normalized by the target ratio.
+
+## CLI examples
+
+Create and continue a permuted-block sequence:
 
 ```bash
-# Permuted block randomization
-python -m trial_randomizer.cli block \
-    --state trial_state.json \
-    --audit audit_log.csv \
-    --arms A B \
-    --ratio 1 1 \
-    --block-sizes 4 6 \
-    --n 10
+trial-randomizer block --state trial_state.json --audit allocations.csv \
+  --arms Control Treatment --ratio 1 1 --block-sizes 4 6 --n 10
 
-# Pocock-Simon minimization
-python -m trial_randomizer.cli minimize \
-    --state trial_state.json \
-    --audit audit_log.csv \
-    --arms A B \
-    --factor site=Site1 age_group=over65
-
-# Stratified block randomization
-python -m trial_randomizer.cli stratified \
-    --state trial_state.json \
-    --audit audit_log.csv \
-    --arms A B \
-    --stratum site=Site1
-
-# Generate concealment envelopes
-python -m trial_randomizer.cli envelopes \
-    --arms A B \
-    --n 100 \
-    --labels-out envelopes.txt \
-    --master-out master_key.csv
-
-# Balance-check report
-python -m trial_randomizer.cli balance-report \
-    --audit audit_log.csv
+trial-randomizer block --state trial_state.json --audit allocations.csv --n 1
 ```
 
-### FastAPI REST Server
+Additional commands:
 
 ```bash
-# Start the server
-python cli.py serve --host 127.0.0.1 --port 8000
+trial-randomizer minimize --state min_state.json --audit min_allocations.csv \
+  --arms Control Treatment --factor site=North age=over65
 
-# Or using uvicorn directly
+trial-randomizer stratified --state strat_state.json --audit strat_allocations.csv \
+  --arms Control Treatment --stratum site=North
+
+trial-randomizer envelopes --arms Control Treatment --n 100 \
+  --labels-out envelopes.txt --master-out master.csv
+
+trial-randomizer balance-report --audit allocations.csv
+```
+
+**Protect state and audit files.** The JSON state retains the full pseudorandom generator state and seed, so anyone with access to it can predict allocations. An explicit `--seed` is useful for reproducible simulations but is inappropriate for concealed assignments. New allocation CSV records do not include the seed, but **the CSV is not cryptographically signed or tamper-evident**. The state and audit files are also separate writes, not an atomic transaction. Maintain independent backups and reconciliation controls if adapting the software for any real workflow.
+
+## FastAPI analytical service
+
+The separate agent service uses mock evaluators and does not enroll subjects or implement treatment allocation. Its `/api/*` endpoints require a configured `TRIAL_RANDOMIZER_API_KEY`, supplied in the `x-api-key` header; otherwise operational endpoints return HTTP 503. The HMAC trail in this subsystem uses `AUDIT_SECRET_KEY`, exists in memory only, and is lost on restart. It does not sign the allocation CSV.
+
+For local testing:
+
+```bash
+export AUDIT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+export TRIAL_RANDOMIZER_API_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 uvicorn agents.api:app --host 127.0.0.1 --port 8000
 ```
 
-API Endpoints:
-- `GET /health` — Health check
-- `GET /metrics` — Prometheus-style metrics
-- `POST /api/audit` — Submit a task for evaluation
-- `POST /api/chat` — Query the supervisory chat
-- `GET /api/audit/logs` — Retrieve audit trail
+Endpoints: `GET /health`, `GET /metrics`, `POST /api/audit`, `POST /api/chat`, and `GET /api/audit/logs`. Docker deployment is available with `docker compose up --build` after setting both required environment variables; the Compose port defaults to loopback-only binding.
 
----
+## Verification, privacy, and compatibility
 
-## Security Features
+Run `python -m pytest -q`; GitHub Actions tests Python 3.10–3.12, checks Python source compilation, validates browser JavaScript syntax, and builds a wheel. Modern browsers with WebAssembly and JavaScript support are required for the demo; initial runtime loading needs CDN access.
 
-### Zero-PHI Outbound Guard
-Active regex inspection blocking SSNs, MRNs, phone numbers, emails, and patient identifiers from outbound data.
-
-### Tamper-Evident Audit Trail
-Chained, HMAC-SHA256 signed logs for every allocation decision and state transition. Integrity verification includes both hash chain linkage and signature validation.
-
-**Important:** Set the `AUDIT_SECRET_KEY` environment variable in production. Without it, a random key is generated (with a warning), which is not suitable for production use.
-
-```bash
-# Production deployment
-export AUDIT_SECRET_KEY="your-secure-random-key"
-```
-
-### Path Traversal Protection
-All file path inputs are validated to prevent directory traversal attacks.
-
----
-
-## Testing
-
-```bash
-# Run all tests
-pytest -v
-
-# Run with coverage
-pytest --cov=trial_randomizer --cov=agents
-
-# Run specific test files
-pytest tests/test_randomizer_core.py -v
-pytest tests/test_security.py -v
-```
-
----
-
-## Docker Deployment
-
-```bash
-# Build and run with Docker Compose
-AUDIT_SECRET_KEY="your-secure-key" docker-compose up --build
-
-# Or build and run manually
-docker build -t trial-randomizer .
-docker run -p 8000:8000 -e AUDIT_SECRET_KEY="your-secure-key" trial-randomizer
-```
-
----
-
-## Project Structure
-
-```
-trial-randomizer/
-├── trial_randomizer/      # Core randomization library
-│   ├── block.py           # Permuted block randomization
-│   ├── minimization.py    # Pocock-Simon minimization
-│   ├── stratified.py      # Stratified block randomization
-│   ├── audit.py           # Audit log storage and reporting
-│   ├── state.py           # JSON state persistence
-│   └── cli.py             # Command-line interface
-├── agents/                # Enterprise analytical suite
-│   ├── api.py             # FastAPI REST server
-│   ├── base.py            # Security, PHI guard, audit trail
-│   ├── models.py          # Pydantic data models
-│   ├── supervisor.py      # Multi-agent orchestrator
-│   ├── workers.py         # Specialized evaluation workers
-│   └── ...
-├── tests/                 # Test suite
-├── cli.py                 # Main CLI entry point
-├── simulator.py           # High-throughput simulation
-├── enrichment.py          # Additional analytical engines
-├── pyproject.toml         # Project configuration
-├── Dockerfile             # Container build
-└── docker-compose.yml     # Container orchestration
-```
-
----
+Treat every subject identifier, covariate, allocation log, state file, and envelope master key as potentially sensitive research data. The regex-based PHI checks in the separate agent subsystem are not a comprehensive de-identification or privacy guarantee.
 
 ## License
 
-MIT License
+[MIT](LICENSE).
