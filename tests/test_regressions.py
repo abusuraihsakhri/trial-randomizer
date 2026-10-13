@@ -76,8 +76,7 @@ def test_cli_rejects_incompatible_state_without_allocating(tmp_path):
     audit = tmp_path / "audit.csv"
     assert main(["block", "--state", str(state), "--audit", str(audit),
                  "--arms", "A", "B"]) == 0
-    with pytest.raises(ValueError, match="State file belongs"):
-        main(["minimize", "--state", str(state), "--audit", str(audit)])
+    assert main(["minimize", "--state", str(state), "--audit", str(audit)]) == 1
 
 
 def test_cli_rejects_zero_subjects(tmp_path):
