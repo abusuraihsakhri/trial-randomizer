@@ -31,9 +31,9 @@ function parseFactors(raw) {
 function readConfiguration() {
   const arms = $("arms").value.split(",").map((v) => v.trim()).filter(Boolean);
   const ratio = $("ratio").value.split(",").map((v) => Number(v.trim()));
-  const sizes = $("sizes").value.split(",").map((v) => Number(v.trim()));
   const method = $("method").value;
-  const probability = Number($("probability").value);
+  const sizes = method === "minimize" ? [] : $("sizes").value.split(",").map((v) => Number(v.trim()));
+  const probability = method === "minimize" ? Number($("probability").value) : 0.8;
   if (arms.length < 2 || new Set(arms).size !== arms.length) {
     throw new Error("Enter at least two distinct treatment arms.");
   }
@@ -134,7 +134,7 @@ async function assign() {
   $("assign").disabled = true;
   try {
     const config = readConfiguration();
-    const factors = parseFactors($("factors").value);
+    const factors = config.method === "block" ? {} : parseFactors($("factors").value);
     const signature = JSON.stringify(config);
     if (activeConfiguration && signature !== activeConfiguration) {
       throw new Error("Configuration changed. Clear the session before allocating again.");
