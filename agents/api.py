@@ -34,7 +34,7 @@ async def require_api_key(request: Request, call_next):
                 content={"detail": "Operational API disabled: configure TRIAL_RANDOMIZER_API_KEY"},
             )
         supplied = request.headers.get("x-api-key", "")
-        if not secrets.compare_digest(supplied, expected):
+        if not secrets.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
             return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
     return await call_next(request)
 
