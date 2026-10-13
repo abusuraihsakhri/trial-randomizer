@@ -9,10 +9,10 @@ arm within each observed level of that factor (marginal counts, not full
 cross-tabulated strata -- this is what lets minimization balance many
 covariates at once without the empty-cell problem stratified blocks run
 into). For a new subject, and for each candidate arm, it computes the
-"range" imbalance statistic (max count - min count across arms) that would
+"range" imbalance statistic (max count/ratio - min count/ratio across arms) that would
 result within each of the subject's factor levels if the subject were
 assigned to that arm, weights each factor's range by its configured
-weight, and sums them (the original range method proposed by Pocock and
+weight, and sums them (the ratio-normalized range variant of Pocock and
 Simon, as opposed to the variance method). The arm with the lowest total
 imbalance is favored. Overall (marginal) treatment balance is included as
 an implicit extra factor by default, matching common minimization
@@ -22,7 +22,9 @@ assigning the best arm with probability p and the runner-up(s) with
 probability 1-p, so the method is never fully deterministic.
 """
 
+import math
 import random
+from numbers import Integral
 
 
 class MinimizationRandomizer:
@@ -38,10 +40,18 @@ class MinimizationRandomizer:
     ):
         if len(arms) < 2:
             raise ValueError("need at least two arms")
+        if len(set(arms)) != len(arms):
+            raise ValueError("arm names must be unique")
         if ratio is None:
             ratio = [1] * len(arms)
         if len(ratio) != len(arms):
             raise ValueError("ratio must have exactly one entry per arm")
+        if any(not isinstance(r, Integral) or isinstance(r, bool) or r <= 0 for r in ratio):
+            raise ValueError("ratio entries must be positive integers")
+        if factor_weights and any(not math.isfinite(w) or w < 0 for w in factor_weights.values()):
+            raise ValueError("factor weights must be finite and non-negative")
+        if not math.isfinite(overall_weight) or overall_weight < 0:
+            raise ValueError("overall_weight must be finite and non-negative")
         if not (0.0 < p_biased_coin <= 1.0):
             raise ValueError("p_biased_coin must be in (0, 1]")
 
@@ -62,12 +72,14 @@ class MinimizationRandomizer:
         arm_counts = levels.setdefault(level, {a: 0 for a in self.arms})
         hypothetical = dict(arm_counts)
         hypothetical[arm] = hypothetical.get(arm, 0) + 1
-        return max(hypothetical.values()) - min(hypothetical.values())
+        scaled = [hypothetical[a] / r for a, r in zip(self.arms, self.ratio)]
+        return max(scaled) - min(scaled)
 
     def _overall_range_if_assigned(self, arm):
         hypothetical = dict(self.totals)
         hypothetical[arm] = hypothetical.get(arm, 0) + 1
-        return max(hypothetical.values()) - min(hypothetical.values())
+        scaled = [hypothetical[a] / r for a, r in zip(self.arms, self.ratio)]
+        return max(scaled) - min(scaled)
 
     def score(self, covariates):
         """Return {arm: weighted total imbalance} if this subject were
@@ -104,7 +116,7 @@ class MinimizationRandomizer:
             reason = "biased_coin_minimize"
         else:
             others = [a for a in self.arms if a != best_arms[0]]
-            arm = self.rng.choice(others)
+            arm = self._weighted_choice(others)
             reason = "biased_coin_explore"
 
         for factor, level in covariates.items():
