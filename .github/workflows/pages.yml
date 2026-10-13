@@ -1,0 +1,45 @@
+name: Deploy browser demonstration
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate browser JavaScript
+        run: node --check web/app.js
+      - name: Assemble static site
+        run: |
+          mkdir -p site/trial_randomizer
+          cp web/index.html web/app.js site/
+          cp trial_randomizer/{__init__,block,minimization,stratified}.py site/trial_randomizer/
+          test -s site/index.html
+          test -s site/trial_randomizer/block.py
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
